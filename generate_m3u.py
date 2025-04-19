@@ -76,7 +76,24 @@ def get_channel_videos(channel_url):
             capture_output=True, text=True, encoding="utf-8", errors="replace"
         )
         ids = result.stdout.strip().split("\n")
-        videos = [f"https://www.youtube.com/watch?v={id}" for id in ids if id]
+        videos = []
+
+        for video_id in ids:
+            if not video_id:
+                continue
+            
+            video_url = f"https://www.youtube.com/watch?v={video_id}"
+            # Ελέγξτε αν το βίντεο είναι διαθέσιμο
+            availability_check = subprocess.run(
+                ["yt-dlp", "-f", "18", "--get-title", video_url],
+                capture_output=True, text=True, encoding="utf-8", errors="replace"
+            )
+            if "members-only" in availability_check.stderr.lower():
+                print(f"Παραλείφθηκε το βίντεο {video_id} (μόνο για μέλη).")
+                continue
+            
+            videos.append(video_url)
+
         return videos
     except Exception as e:
         print(f"Σφάλμα κατά την εξαγωγή των βίντεο για το κανάλι {channel_url}: {e}")
@@ -113,7 +130,7 @@ def get_video_info(video_url, channel_name, pbar):
 
         pbar.set_postfix({"URL": video_id, "Status": "Εξαγωγή URL"})
 
-        formats_to_try = ["18", "22"]
+        formats_to_try = ["18"]
         output = ""
         used_format = ""
         result = None
@@ -147,7 +164,7 @@ def get_video_info(video_url, channel_name, pbar):
             pbar.set_postfix({"URL": video_id, "Status": "Ολοκληρώθηκε"})
             return f"Επεξεργασία βίντεο: {video_url} - {status} (μορφή: {used_format}, thumbnail: {thumbnail_short})"
         else:
-            error_msg = result.stderr.strip() if result and result.stderr else "Δεν βρέθηκε διαθέσιμη μορφή 18 ή 22"
+            error_msg = result.stderr.strip() if result and result.stderr else "Δεν βρέθηκε διαθέσιμη μορφή 18"
             pbar.set_postfix({"URL": video_id, "Status": "Σφάλμα URL"})
             print(f"Βίντεο: {video_url}")
             print(f"Σφάλμα: {error_msg}")
