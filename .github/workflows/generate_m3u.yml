@@ -1,0 +1,87 @@
+name: Δημιουργία M3U και προσθήκη σε δημόσιο αποθετήριο
+# Δημιουργία M3U και προσθήκη σε δημόσιο αποθετήριο
+on:
+  schedule:
+    - cron: "0 * * * *"  # Εκτέλεση κάθε ώρα στις :00 
+    - cron: "30 * * * *"  # Εκτέλεση κάθε μισή ώρα στις :30
+  workflow_dispatch: # Επιτρέπει την εκτέλεση του workflow χειροκίνητα από το GitHub UI
+
+jobs:
+  generate_m3u:
+    runs-on: ubuntu-latest # Χρήση μεγαλύτερου runner για βελτιωμένη απόδοση
+    steps:
+      - name: Ελέγξτε τα εναπομείναντα λεπτά για τα προφίλ
+        id: check_minutes
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          ALT_GH_TOKEN: ${{ secrets.ALT_GITHUB_TOKEN }}
+        run: |
+          primary_remaining_minutes=$(gh api /rate_limit | jq .rate.remaining)
+          echo "Primary remaining minutes: $primary_remaining_minutes"
+          alternate_remaining_minutes=$(GH_TOKEN=${{ secrets.ALT_GITHUB_TOKEN }} gh api /rate_limit | jq .rate.remaining)
+          echo "Alternate remaining minutes: $alternate_remaining_minutes"
+          
+          if [ "$primary_remaining_minutes" -ge 2000 ] && [ "$alternate_remaining_minutes" -ge 2000 ]; then
+            echo "Both profiles have reached the 2000 minutes limit"
+            exit 1  # Exit with an error code to stop the workflow
+          elif [ "$primary_remaining_minutes" -ge 2000 ]; then
+            echo "Using alternate profile"
+            echo "switch_profile=true" >> $GITHUB_ENV
+          else
+            echo "Using primary profile"
+            echo "switch_profile=false" >> $GITHUB_ENV
+          fi
+
+      - name: Έλεγχος αποθετηρίου
+        uses: actions/checkout@v4 # Κάνει checkout το αποθετήριο ώστε να έχουμε πρόσβαση στον κώδικα
+
+      - name: Πακέτα cache Python
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/pip
+          key: ${{ runner.os }}-pip-${{ hashFiles('**/requirements.txt') }}
+          restore-keys: |
+            ${{ runner.os }}-pip-
+
+      - name: Ρύθμιση Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12' # Χρησιμοποίησε την έκδοση Python που χρειάζεται το σκριπτ σου
+
+      - name: Εγκατάσταση εξαρτήσεων
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+
+      - name: Εκτέλεση σενάριου generate_m3u.py
+        run: |
+          python generate_m3u.py
+
+      - name: Εμφάνιση περιεχομένων τρέχοντος καταλόγου
+        run: |
+         ls -la
+
+      - name: Δέσμευση και προώθηση των αλλαγών στο δημόσιο αποθετήριο
+        run: |
+          if [ "${{ env.switch_profile }}" == "true" ]; then
+            git clone https://github.com/Blueddo/Bluelist.git public_repo
+            cd public_repo
+            git config --global user.name 'github-actions[bot]'
+            git config --global user.email 'github-actions[bot]@users.noreply.github.com'
+            cp ../youtube_videos.m3u youtube_videos.m3u
+            git add youtube_videos.m3u
+            git commit -m 'Update M3U playlist'
+            git push https://Blueddo:${{ secrets.PUBLIC_REPO_PAT_ALT }}@github.com/Blueddo/Bluelist.git
+          else
+            git clone https://github.com/Blueddo/Bluelist.git public_repo
+            cd public_repo
+            git config --global user.name 'github-actions[bot]'
+            git config --global user.email 'github-actions[bot]@users.noreply.github.com'
+            cp ../youtube_videos.m3u youtube_videos.m3u
+            git add youtube_videos.m3u
+            git commit -m 'Update M3U playlist'
+            git push https://Blueddo:${{ secrets.PUBLIC_REPO_PAT }}@github.com/Blueddo/Bluelist.git
+          fi
+        env:
+          PUBLIC_REPO_PAT: ${{ secrets.PUBLIC_REPO_PAT }}
+          PUBLIC_REPO_PAT_ALT: ${{ secrets.PUBLIC_REPO_PAT_ALT }}
