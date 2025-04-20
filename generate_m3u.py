@@ -3,15 +3,7 @@ import subprocess
 from tqdm import tqdm
 from termcolor import colored
 import os
-import sys
 import urllib.request
-
-# Ρύθμιση κωδικοποίησης για την κονσόλα των Windows
-if sys.platform == "win32":
-    import codecs
-    codecs.register(lambda name: codecs.lookup("utf-8") if name == "cp65001" else None)
-    sys.stdout.reconfigure(encoding='utf-8')
-    sys.stderr.reconfigure(encoding='utf-8')
 
 # Συνάρτηση ελέγχου διαθεσιμότητας thumbnail
 def get_valid_thumbnail(thumbnail_url, video_id):
