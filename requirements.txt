@@ -1,3 +1,4 @@
 tqdm
 termcolor
 urllib3
+yt-dlp
