@@ -1,14 +1,14 @@
-name: Δημιουργία M3U και προσθήκη σε δημόσιο αποθετήριο
-# Δημιουργία M3U και προσθήκη σε δημόσιο αποθετήριο
+name: Δημιουργία YouTube M3U
+
 on:
   schedule:
-    - cron: "0 * * * *"  # Εκτέλεση κάθε ώρα στις :00 
+    - cron: "0 * * * *"  # Εκτέλεση κάθε ώρα στις :00
     - cron: "30 * * * *"  # Εκτέλεση κάθε μισή ώρα στις :30
-  workflow_dispatch: # Επιτρέπει την εκτέλεση του workflow χειροκίνητα από το GitHub UI
+  workflow_dispatch:
 
 jobs:
   generate_m3u:
-    runs-on: ubuntu-latest # Χρήση μεγαλύτερου runner για βελτιωμένη απόδοση
+    runs-on: ubuntu-latest
     steps:
       - name: Ελέγξτε τα εναπομείναντα λεπτά για τα προφίλ
         id: check_minutes
@@ -23,7 +23,7 @@ jobs:
           
           if [ "$primary_remaining_minutes" -ge 2000 ] && [ "$alternate_remaining_minutes" -ge 2000 ]; then
             echo "Both profiles have reached the 2000 minutes limit"
-            exit 1  # Exit with an error code to stop the workflow
+            exit 1
           elif [ "$primary_remaining_minutes" -ge 2000 ]; then
             echo "Using alternate profile"
             echo "switch_profile=true" >> $GITHUB_ENV
@@ -33,7 +33,7 @@ jobs:
           fi
 
       - name: Έλεγχος αποθετηρίου
-        uses: actions/checkout@v4 # Κάνει checkout το αποθετήριο ώστε να έχουμε πρόσβαση στον κώδικα
+        uses: actions/checkout@v4
 
       - name: Πακέτα cache Python
         uses: actions/cache@v4
@@ -46,20 +46,34 @@ jobs:
       - name: Ρύθμιση Python
         uses: actions/setup-python@v5
         with:
-          python-version: '3.12' # Χρησιμοποίησε την έκδοση Python που χρειάζεται το σκριπτ σου
+          python-version: '3.12'
 
       - name: Εγκατάσταση εξαρτήσεων
         run: |
           python -m pip install --upgrade pip
           pip install -r requirements.txt
+          yt-dlp -U  # Ενημέρωση yt-dlp για αποφυγή προβλημάτων
 
       - name: Εκτέλεση σενάριου generate_m3u.py
         run: |
           python generate_m3u.py
+          if [ ! -f youtube_videos.m3u ]; then
+            echo "Error: youtube_videos.m3u was not created"
+            exit 1
+          fi
 
       - name: Εμφάνιση περιεχομένων τρέχοντος καταλόγου
         run: |
-         ls -la
+          ls -la
+
+      - name: Αποθήκευση logs
+        if: always()
+        uses: actions/upload-artifact@v3
+        with:
+          name: script-logs
+          path: |
+            script.log
+            youtube_videos.m3u
 
       - name: Δέσμευση και προώθηση των αλλαγών στο δημόσιο αποθετήριο
         run: |
@@ -70,6 +84,10 @@ jobs:
             git config --global user.email 'github-actions[bot]@users.noreply.github.com'
             cp ../youtube_videos.m3u youtube_videos.m3u
             git add youtube_videos.m3u
+            if git diff --staged --quiet; then
+              echo "No changes to commit"
+              exit 0
+            fi
             git commit -m 'Update M3U playlist'
             git push https://Blueddo:${{ secrets.PUBLIC_REPO_PAT_ALT }}@github.com/Blueddo/Bluelist.git
           else
@@ -79,6 +97,10 @@ jobs:
             git config --global user.email 'github-actions[bot]@users.noreply.github.com'
             cp ../youtube_videos.m3u youtube_videos.m3u
             git add youtube_videos.m3u
+            if git diff --staged --quiet; then
+              echo "No changes to commit"
+              exit 0
+            fi
             git commit -m 'Update M3U playlist'
             git push https://Blueddo:${{ secrets.PUBLIC_REPO_PAT }}@github.com/Blueddo/Bluelist.git
           fi
