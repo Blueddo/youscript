@@ -1,4 +1,4 @@
-name: Δημιουργία YouTube M3U
+name: Δημιουργία M3U και προσθήκη σε δημόσιο αποθετήριο
 
 on:
   schedule:
@@ -68,7 +68,7 @@ jobs:
 
       - name: Αποθήκευση logs
         if: always()
-        uses: actions/upload-artifact@v3
+        uses: actions/upload-artifact@v4  # Αλλαγή από v3 σε v4
         with:
           name: script-logs
           path: |
