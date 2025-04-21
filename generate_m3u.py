@@ -4,11 +4,8 @@ from tqdm import tqdm
 from termcolor import colored
 import os
 import urllib.request
+import sys
 import time
-import logging
-
-# Ρύθμιση logging για αποθήκευση σε αρχείο
-logging.basicConfig(filename='script.log', level=logging.INFO, encoding='utf-8')
 
 # Συνάρτηση ελέγχου διαθεσιμότητας thumbnail
 def get_valid_thumbnail(thumbnail_url, video_id):
@@ -33,7 +30,7 @@ def get_valid_thumbnail(thumbnail_url, video_id):
     
     return "", "Άγνωστο_Thumbnail"
 
-# Συνάρτηση φόρτωσης URLs καναλιών από αρχείο
+# Συνάρτηση φόρτωσης URLs καναλιών από το αρχείο
 def load_channels():
     channels = []
     try:
@@ -42,94 +39,69 @@ def load_channels():
                 url = line.strip()
                 if url and url.startswith("https://www.youtube.com/"):
                     channels.append(url)
-        msg = f"Φορτώθηκαν {len(channels)} κανάλια από το αρχείο youtube_channels.txt."
-        print(msg)
-        logging.info(msg)
+        print(f"Φορτώθηκαν {len(channels)} κανάλια από το αρχείο youtube_channels.txt.")
     except FileNotFoundError:
-        msg = "Το αρχείο youtube_channels.txt δεν βρέθηκε."
-        print(msg)
-        logging.error(msg)
+        print(colored("Το αρχείο youtube_channels.txt δεν βρέθηκε.", "red"))
     except Exception as e:
-        msg = f"Σφάλμα κατά την ανάγνωση του αρχείου: {e}"
-        print(msg)
-        logging.error(msg)
+        print(colored(f"Σφάλμα κατά την ανάγνωση του αρχείου: {e}", "red"))
     return channels
 
 # Συνάρτηση για λήψη του ονόματος του καναλιού
 def get_channel_name(channel_url):
+    print(f"Προσπάθεια εξαγωγής ονόματος για το κανάλι: {channel_url}")
     try:
         result = subprocess.run(
-            ["yt-dlp", "--print", "uploader", channel_url],
-            capture_output=True, text=True, encoding="utf-8", errors="replace"
+            ["yt-dlp", "--print", "uploader", "--no-warnings", "--force-ipv4", channel_url],
+            capture_output=True,
+            text=True,
+            encoding="utf-8",
+            errors="ignore",
+            timeout=120
         )
-        if result.stderr:
-            msg = f"Σφάλματα yt-dlp (uploader) για {channel_url}:\n{result.stderr}"
-            print(msg)
-            logging.warning(msg)
+        print(f"Κωδικός εξόδου: {result.returncode}")
+        print(f"stdout: {result.stdout.strip()}")
+        print(f"stderr: {result.stderr.strip()}")
+
         uploader = result.stdout.strip()
-        if uploader:
+        if result.returncode == 0 and uploader:
+            print(f"Επιτυχής εξαγωγή ονόματος: {uploader}")
             return uploader
         else:
+            print(colored(f"Δεν βρέθηκε όνομα καναλιού για {channel_url}: {result.stderr}", "red"))
             return "Άγνωστο_Κανάλι"
+    except subprocess.TimeoutExpired:
+        print(colored(f"Η εντολή yt-dlp για {channel_url} έληξε λόγω timeout.", "red"))
+        return "Άγνωστο_Κανάλι"
     except Exception as e:
-        msg = f"Σφάλμα κατά την εξαγωγή του ονόματος του καναλιού για {channel_url}: {e}"
-        print(msg)
-        logging.error(msg)
+        print(colored(f"Γενικό σφάλμα για το κανάλι {channel_url}: {e}", "red"))
         return "Άγνωστο_Κανάλι"
 
-# Συνάρτηση για λήψη των URLs των 5 πρώτων βίντεο από ένα κανάλι
+# Συνάρτηση για λήψη των URLs των 5 πρώτων βίντεο από την καρτέλα Videos
 def get_channel_videos(channel_url):
+    print(f"Προσπάθεια εξαγωγής βίντεο για το κανάλι: {channel_url}")
     try:
-        # Προσθήκη /videos για περιορισμό στην καρτέλα Videos
-        channel_url = f"{channel_url}/videos"
+        videos_url = channel_url.rstrip("/") + "/videos"
         result = subprocess.run(
-            ["yt-dlp", "-f", "18", "--get-id", "--playlist-end", "5", channel_url],
-            capture_output=True, text=True, encoding="utf-8", errors="replace"
+            ["yt-dlp", "--get-id", "--playlist-end", "5", "--no-warnings", "--force-ipv4", videos_url],
+            capture_output=True,
+            text=True,
+            encoding="utf-8",
+            errors="ignore",
+            timeout=120
         )
-        if result.stdout:
-            msg = f"Εξήχθησαν IDs για {channel_url}:\n{result.stdout}"
-            print(msg)
-            logging.info(msg)
-        if result.stderr:
-            msg = f"Σφάλματα yt-dlp για {channel_url}:\n{result.stderr}"
-            print(msg)
-            logging.warning(msg)
-        
-        if result.returncode != 0:
-            msg = f"Η εντολή yt-dlp απέτυχε για {channel_url} με κωδικό {result.returncode}"
-            print(msg)
-            logging.error(msg)
-            return []
-        
+        print(f"Κωδικός εξόδου: {result.returncode}")
+        print(f"stdout: {result.stdout.strip()}")
+        print(f"stderr: {result.stderr.strip()}")
+
         ids = result.stdout.strip().split("\n")
-        videos = []
-        for video_id in ids:
-            if not video_id:
-                continue
-            video_url = f"https://www.youtube.com/watch?v={video_id}"
-            availability_check = subprocess.run(
-                ["yt-dlp", "-f", "18/best", "--get-title", video_url],
-                capture_output=True, text=True, encoding="utf-8", errors="replace"
-            )
-            if "members-only" in availability_check.stderr.lower():
-                msg = f"Παραλείφθηκε το βίντεο {video_id} (μόνο για μέλη)."
-                print(msg)
-                logging.info(msg)
-                continue
-            if availability_check.returncode == 0 and availability_check.stdout:
-                videos.append(video_url)
-            else:
-                msg = f"Το βίντεο {video_id} δεν είναι διαθέσιμο: {availability_check.stderr}"
-                print(msg)
-                logging.warning(msg)
-        msg = f"Βρέθηκαν {len(videos)} διαθέσιμα βίντεο για {channel_url}"
-        print(msg)
-        logging.info(msg)
+        videos = [f"https://www.youtube.com/watch?v={video_id}" for video_id in ids if video_id]
+        print(f"Βρέθηκαν {len(videos)} βίντεο για το κανάλι {channel_url}")
         return videos
+    except subprocess.TimeoutExpired:
+        print(colored(f"Η εξαγωγή βίντεο για {channel_url} έληξε λόγω timeout.", "red"))
+        return []
     except Exception as e:
-        msg = f"Σφάλμα κατά την εξαγωγή των βίντεο για το κανάλι {channel_url}: {e}"
-        print(msg)
-        logging.error(msg)
+        print(colored(f"Σφάλμα εξαγωγής βίντεο για {channel_url}: {e}", "red"))
         return []
 
 # Συνάρτηση για λήψη του URL, του τίτλου και του thumbnail του βίντεο
@@ -139,113 +111,104 @@ def get_video_info(video_url, channel_name, pbar):
         pbar.set_postfix({"URL": video_id, "Status": "Εξαγωγή τίτλου"})
 
         title_result = subprocess.run(
-            ["yt-dlp", "--get-title", video_url],
-            capture_output=True, text=True, encoding="utf-8", errors="replace"
+            ["yt-dlp", "--get-title", "--no-warnings", "--force-ipv4", video_url],
+            capture_output=True,
+            text=True,
+            encoding="utf-8",
+            errors="ignore",
+            timeout=60
         )
-        if title_result.stderr:
-            msg = f"Σφάλματα yt-dlp (τίτλος) για {video_url}:\n{title_result.stderr}"
-            print(msg)
-            logging.warning(msg)
+        print(f"Τίτλος βίντεο {video_id} - Κωδικός εξόδου: {title_result.returncode}")
+        print(f"stderr: {title_result.stderr.strip()}")
         title = title_result.stdout.strip() if title_result.stdout else "Άγνωστος_Τίτλος"
-        title = title.replace(" ", "_")
 
         pbar.set_postfix({"URL": video_id, "Status": "Εξαγωγή thumbnail"})
-        try:
-            thumbnail_result = subprocess.run(
-                ["yt-dlp", "--get-thumbnail", video_url],
-                capture_output=True, text=True, encoding="utf-8", errors="replace"
-            )
-            if thumbnail_result.stderr:
-                msg = f"Σφάλματα yt-dlp (thumbnail) για {video_url}:\n{thumbnail_result.stderr}"
-                print(msg)
-                logging.warning(msg)
-            thumbnail_url = thumbnail_result.stdout.strip() if thumbnail_result.stdout else ""
-            valid_thumbnail_url, thumbnail_short = get_valid_thumbnail(thumbnail_url, video_id)
-        except (UnicodeDecodeError, subprocess.CalledProcessError) as e:
-            valid_thumbnail_url, thumbnail_short = "", "Άγνωστο_Thumbnail_(σφάλμα_εξαγωγής)"
-            msg = f"Σφάλμα κατά την εξαγωγή thumbnail για {video_url}: {str(e)}"
-            print(msg)
-            logging.error(msg)
-            pbar.set_postfix({"URL": video_id, "Status": "Σφάλμα thumbnail"})
-            return f"Επεξεργασία βίντεο: {video_url} - Σφάλμα thumbnail: {str(e)}"
+        thumbnail_result = subprocess.run(
+            ["yt-dlp", "--get-thumbnail", "--no-warnings", "--force-ipv4", video_url],
+            capture_output=True,
+            text=True,
+            encoding="utf-8",
+            errors="ignore",
+            timeout=60
+        )
+        print(f"Thumbnail βίντεο {video_id} - Κωδικός εξόδου: {thumbnail_result.returncode}")
+        print(f"stderr: {thumbnail_result.stderr.strip()}")
+        thumbnail_url = thumbnail_result.stdout.strip() if thumbnail_result.stdout else ""
+        valid_thumbnail_url, thumbnail_short = get_valid_thumbnail(thumbnail_url, video_id)
 
         pbar.set_postfix({"URL": video_id, "Status": "Εξαγωγή URL"})
-        formats_to_try = ["18", "best"]
-        output = ""
-        used_format = ""
-        result = None
-        for fmt in formats_to_try:
-            try:
-                result = subprocess.run(
-                    ["yt-dlp", "--get-url", "-f", fmt, video_url],
-                    capture_output=True, text=True, encoding="utf-8", errors="replace"
-                )
-                if result.stderr:
-                    msg = f"Σφάλματα yt-dlp (URL, μορφή {fmt}) για {video_url}:\n{result.stderr}"
-                    print(msg)
-                    logging.warning(msg)
-                output = result.stdout.strip()
-                if output and output.startswith("https://"):
-                    used_format = fmt
-                    break
-            except (subprocess.CalledProcessError, UnicodeDecodeError) as e:
-                msg = f"Αποτυχία δοκιμής μορφής {fmt} για {video_url}: {str(e)}"
-                print(msg)
-                logging.warning(msg)
-                continue
+        result = subprocess.run(
+            ["yt-dlp", "-f", "18", "--get-url", "--no-warnings", "--force-ipv4", video_url],
+            capture_output=True,
+            text=True,
+            encoding="utf-8",
+            errors="ignore",
+            timeout=60
+        )
+        print(f"URL βίντεο {video_id} - Κωδικός εξόδου: {result.returncode}")
+        print(f"stderr: {result.stderr.strip()}")
+        output = result.stdout.strip()
 
-        if output:
-            status = colored("URL βρέθηκε", "yellow", "on_blue", attrs=["bold", "blink"])
+        if output and output.startswith("https://"):
             with open("youtube_videos.m3u", "a", encoding="utf-8") as m3u_file:
                 m3u_file.write(f"#EXTINF:-1 group-title=\"{channel_name}\" tvg-logo=\"{valid_thumbnail_url}\",{title}\n")
                 m3u_file.write(f"{output}\n")
-
-            msg = f"Βίντεο: {video_url}\nΤίτλος: {title}\nΜορφή: {used_format}\nThumbnail: {thumbnail_short}\nΚατάσταση: {status}\n{'-' * 80}"
-            print(msg)
-            logging.info(msg)
             pbar.set_postfix({"URL": video_id, "Status": "Ολοκληρώθηκε"})
-            return f"Επεξεργασία βίντεο: {video_url} - {status} (μορφή: {used_format}, thumbnail: {thumbnail_short})"
+            return f"Επεξεργασία βίντεο: {video_url} - URL βρέθηκε"
         else:
-            error_msg = result.stderr.strip() if result and result.stderr else "Δεν βρέθηκε διαθέσιμη μορφή"
             pbar.set_postfix({"URL": video_id, "Status": "Σφάλμα URL"})
-            msg = f"Βίντεο: {video_url}\nΣφάλμα: {error_msg}\n{'-' * 80}"
-            print(msg)
-            logging.error(msg)
-            return f"Επεξεργασία βίντεο: {video_url} - δεν βρέθηκε έγκυρο URL: {error_msg}"
+            return f"Επεξεργασία βίντεο: {video_url} - δεν βρέθηκε έγκυρο URL: {result.stderr}"
+    except subprocess.TimeoutExpired:
+        pbar.set_postfix({"URL": video_id, "Status": "Timeout"})
+        return f"Επεξεργασία βίντεο: {video_url} - έληξε λόγω timeout"
     except Exception as e:
         pbar.set_postfix({"URL": video_id, "Status": "Γενικό σφάλμα"})
-        msg = f"Βίντεο: {video_url}\nΣφάλμα: {str(e)}\n{'-' * 80}"
-        print(msg)
-        logging.error(msg)
         return f"Σφάλμα κατά την επεξεργασία του βίντεο {video_url}: {e}"
 
 # Κύριο πρόγραμμα
 def main():
+    print("Έναρξη προγράμματος...")
     channels = load_channels()
+    if not channels:
+        print(colored("Κανένα κανάλι δεν φορτώθηκε. Ελέγξτε το youtube_channels.txt.", "red"))
+        return
+
     video_list = []
     for channel in channels:
-        channel_name = get_channel_name(channel)
-        videos = get_channel_videos(channel)
-        for video in videos:
-            video_list.append((video, channel_name))
-        time.sleep(1)  # Καθυστέρηση για αποφυγή rate limiting
+        print(f"\nΕπεξεργασία καναλιού: {channel}")
+        try:
+            channel_name = get_channel_name(channel)
+            print(f"Όνομα καναλιού: {channel_name}")
+            videos = get_channel_videos(channel)
+            for video in videos:
+                video_list.append((video, channel_name))
+            time.sleep(2)  # Καθυστέρηση 2 δευτερολέπτων μεταξύ καναλιών
+        except Exception as e:
+            print(colored(f"Σφάλμα κατά την επεξεργασία του καναλιού {channel}: {e}", "red"))
 
+    if not video_list:
+        print(colored("Δεν βρέθηκαν βίντεο για επεξεργασία.", "red"))
+        return
+
+    print(f"Συνολικά βίντεο προς επεξεργασία: {len(video_list)}")
+    
     with open("youtube_videos.m3u", "w", encoding="utf-8") as m3u_file:
         m3u_file.write("#EXTM3U\n")
 
-    if video_list:
-        with tqdm(total=len(video_list), desc="Επεξεργασία βίντεο YouTube", ncols=120, bar_format='{l_bar}{bar}| {n_fmt}/{total_fmt} {postfix}') as pbar:
-            with concurrent.futures.ThreadPoolExecutor() as executor:
-                futures = [executor.submit(get_video_info, video, channel_name, pbar) for video, channel_name in video_list]
-                results = [f.result() for f in concurrent.futures.as_completed(futures)]
-                for result in results:
+    with tqdm(total=len(video_list), desc="Επεξεργασία βίντεο YouTube", ncols=120, 
+              bar_format='{l_bar}{bar}| {n_fmt}/{total_fmt} [{percentage:.1f}%] {postfix}') as pbar:
+        with concurrent.futures.ThreadPoolExecutor(max_workers=2) as executor:
+            futures = [executor.submit(get_video_info, video, channel_name, pbar) for video, channel_name in video_list]
+            for future in concurrent.futures.as_completed(futures):
+                try:
+                    result = future.result()
                     pbar.update(1)
                     print(result)
-                    logging.info(result)
-    else:
-        msg = "Δεν υπάρχουν βίντεο για επεξεργασία."
-        print(msg)
-        logging.info(msg)
+                except Exception as e:
+                    print(colored(f"Σφάλμα κατά την επεξεργασία βίντεο: {e}", "red"))
 
 if __name__ == "__main__":
-    main()
+    try:
+        main()
+    except Exception as e:
+        print(colored(f"Κρίσιμο σφάλμα στο πρόγραμμα: {e}", "red"))
