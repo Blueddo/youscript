@@ -25,7 +25,7 @@ def check_user_videos(user):
     try:
         # Εκτέλεση yt-dlp για να πάρουμε τη λίστα των πιο πρόσφατων βίντεο από το κανάλι
         result = subprocess.run(
-            ["yt-dlp", "-f", "18", "--get-url", "--get-title", "--playlist-end", "5", f"https://www.youtube.com/{user}/videos"],
+            ["yt-dlp", "-f", "18", "--get-url", "--get-title", "--playlist-end", "5", f"https://www.youtube.com/@{user}/videos"],
             capture_output=True, text=True
         )
         output = result.stdout.strip().splitlines()
