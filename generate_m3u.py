@@ -72,6 +72,27 @@ def get_channel_name(channel_url):
     except subprocess.TimeoutExpired:
         print(colored(f"Η εντολή yt-dlp για {channel_url} έληξε λόγω timeout.", "red"))
         return "Άγνωστο_Κανάλι"
+    except UnicodeDecodeError as e:
+        print(colored(f"Σφάλμα αποκωδικοποίησης για {channel_url}: {e}. Δοκιμή με cp1253...", "red"))
+        try:
+            result = subprocess.run(
+                ["yt-dlp", "--print", "uploader", "--no-warnings", "--force-ipv4", channel_url],
+                capture_output=True,
+                text=True,
+                encoding="cp1253",
+                errors="ignore",
+                timeout=120
+            )
+            uploader = result.stdout.strip()
+            if result.returncode == 0 and uploader:
+                print(f"Επιτυχής εξαγωγή με cp1253: {uploader}")
+                return uploader
+            else:
+                print(colored(f"Αποτυχία με cp1253 για {channel_url}: {result.stderr}", "red"))
+                return "Άγνωστο_Κανάλι"
+        except Exception as e:
+            print(colored(f"Αποτυχία επανάληψης για {channel_url}: {e}", "red"))
+            return "Άγνωστο_Κανάλι"
     except Exception as e:
         print(colored(f"Γενικό σφάλμα για το κανάλι {channel_url}: {e}", "red"))
         return "Άγνωστο_Κανάλι"
@@ -100,6 +121,24 @@ def get_channel_videos(channel_url):
     except subprocess.TimeoutExpired:
         print(colored(f"Η εξαγωγή βίντεο για {channel_url} έληξε λόγω timeout.", "red"))
         return []
+    except UnicodeDecodeError as e:
+        print(colored(f"Σφάλμα αποκωδικοποίησης για βίντεο {channel_url}: {e}. Δοκιμή με cp1253...", "red"))
+        try:
+            result = subprocess.run(
+                ["yt-dlp", "--get-id", "--playlist-end", "5", "--no-warnings", "--force-ipv4", videos_url],
+                capture_output=True,
+                text=True,
+                encoding="cp1253",
+                errors="ignore",
+                timeout=120
+            )
+            ids = result.stdout.strip().split("\n")
+            videos = [f"https://www.youtube.com/watch?v={video_id}" for video_id in ids if video_id]
+            print(f"Βρέθηκαν {len(videos)} βίντεο με cp1253 για το κανάλι {channel_url}")
+            return videos
+        except Exception as e:
+            print(colored(f"Αποτυχία επανάληψης για βίντεο {channel_url}: {e}", "red"))
+            return []
     except Exception as e:
         print(colored(f"Σφάλμα εξαγωγής βίντεο για {channel_url}: {e}", "red"))
         return []
@@ -116,11 +155,10 @@ def get_video_info(video_url, channel_name, pbar):
             text=True,
             encoding="utf-8",
             errors="ignore",
-            timeout=60
+            timeout=60  # Μειωμένο timeout για να αποφευχθεί υπερβολική καθυστέρηση
         )
-        print(f"Τίτλος βίντεο {video_id} - Κωδικός εξόδου: {title_result.returncode}")
-        print(f"stderr: {title_result.stderr.strip()}")
         title = title_result.stdout.strip() if title_result.stdout else "Άγνωστος_Τίτλος"
+        title = title.replace(" ", "_").replace("|", "_").replace(",", "_")
 
         pbar.set_postfix({"URL": video_id, "Status": "Εξαγωγή thumbnail"})
         thumbnail_result = subprocess.run(
@@ -131,8 +169,6 @@ def get_video_info(video_url, channel_name, pbar):
             errors="ignore",
             timeout=60
         )
-        print(f"Thumbnail βίντεο {video_id} - Κωδικός εξόδου: {thumbnail_result.returncode}")
-        print(f"stderr: {thumbnail_result.stderr.strip()}")
         thumbnail_url = thumbnail_result.stdout.strip() if thumbnail_result.stdout else ""
         valid_thumbnail_url, thumbnail_short = get_valid_thumbnail(thumbnail_url, video_id)
 
@@ -145,8 +181,6 @@ def get_video_info(video_url, channel_name, pbar):
             errors="ignore",
             timeout=60
         )
-        print(f"URL βίντεο {video_id} - Κωδικός εξόδου: {result.returncode}")
-        print(f"stderr: {result.stderr.strip()}")
         output = result.stdout.strip()
 
         if output and output.startswith("https://"):
@@ -197,7 +231,7 @@ def main():
 
     with tqdm(total=len(video_list), desc="Επεξεργασία βίντεο YouTube", ncols=120, 
               bar_format='{l_bar}{bar}| {n_fmt}/{total_fmt} [{percentage:.1f}%] {postfix}') as pbar:
-        with concurrent.futures.ThreadPoolExecutor(max_workers=2) as executor:
+        with concurrent.futures.ThreadPoolExecutor(max_workers=2) as executor:  # Περιορισμός σε 2 threads (max_workers)
             futures = [executor.submit(get_video_info, video, channel_name, pbar) for video, channel_name in video_list]
             for future in concurrent.futures.as_completed(futures):
                 try:
