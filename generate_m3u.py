@@ -9,7 +9,8 @@ def load_users():
     try:
         with open("usersyoutube.txt", "r", encoding="utf-8") as file:
             for line in file:
-                users.append(line.strip())
+                user = line.strip().lstrip('@')  # Αφαίρεση του @ αν υπάρχει
+                users.append(user)
         print(f"Φορτώθηκαν {len(users)} χρήστες από το αρχείο usersyoutube.txt.")
     except FileNotFoundError:
         print("Το αρχείο usersyoutube.txt δεν βρέθηκε.")
@@ -19,13 +20,20 @@ def load_users():
 
 def check_user_videos(user):
     try:
-        time.sleep(2)  # Καθυστέρηση 2 δευτερολέπτων
+        if not user:
+            return f"Έλεγχος χρήστη: {user} - κενό όνομα χρήστη"
+        
+        time.sleep(2)
+        url = f"https://www.youtube.com/c/{user}/videos"
+        print(f"Checking URL: {url}")
+        
         result = subprocess.run(
-            ["yt-dlp", "-f", "18", "--get-url", "--get-title", "--playlist-end", "5", "--force-generic-extractor", f"https://www.youtube.com/{user}/videos"],
+            ["yt-dlp", "-f", "18", "--get-url", "--get-title", "--playlist-end", "5", url],
             capture_output=True, text=True
         )
         print(f"yt-dlp stdout for {user}: {result.stdout}")
         print(f"yt-dlp stderr for {user}: {result.stderr}")
+        
         output = result.stdout.strip().splitlines()
 
         if output:
