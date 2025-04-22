@@ -9,7 +9,10 @@ def load_users():
     try:
         with open("usersyoutube.txt", "r") as file:
             for line in file:
-                users.append(line.strip())
+                user = line.strip()
+                if user.startswith("@"):
+                    user = user[1:]  # Αφαίρεση του '@'
+                users.append(user)
         print(f"Φορτώθηκαν {len(users)} χρήστες από το αρχείο usersyoutube.txt.")
     except FileNotFoundError:
         print("Το αρχείο usersyoutube.txt δεν βρέθηκε.")
