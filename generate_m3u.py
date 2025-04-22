@@ -1,6 +1,5 @@
 import concurrent.futures
 import subprocess
-import time
 from tqdm import tqdm
 from termcolor import colored
 
@@ -20,30 +19,14 @@ def load_users():
 
 def check_user_videos(user):
     try:
-        if not user:
-            return f"Έλεγχος χρήστη: {user} - κενό όνομα χρήστη"
-        
-        time.sleep(2)
-        url_formats = [
-            f"https://www.youtube.com/@{user}/videos",
-            f"https://www.youtube.com/c/{user}/videos",
-            f"https://www.youtube.com/user/{user}/videos"
-        ]
-        
-        for url in url_formats:
-            print(f"Checking URL: {url}")
-            result = subprocess.run(
-                ["yt-dlp", "-f", "18", "--get-url", "--get-title", "--playlist-end", "5", "--user-agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) Chrome/91.0.4472.124", url],
-                capture_output=True, text=True
-            )
-            print(f"yt-dlp stdout for {user}: {result.stdout}")
-            print(f"yt-dlp stderr for {user}: {result.stderr}")
-            
-            if result.returncode == 0 and result.stdout.strip():
-                output = result.stdout.strip().splitlines()
-                break
-        else:
-            return f"Έλεγχος χρήστη: {user} - κανένα έγκυρο URL δεν βρέθηκε"
+        print(f"Checking URL: https://www.youtube.com/@{user}/videos")
+        result = subprocess.run(
+            ["yt-dlp", "-f", "18", "--get-url", "--get-title", "--playlist-end", "5", "--user-agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) Chrome/91.0.4472.124", f"https://www.youtube.com/@{user}/videos"],
+            capture_output=True, text=True
+        )
+        print(f"yt-dlp stdout for {user}: {result.stdout}")
+        print(f"yt-dlp stderr for {user}: {result.stderr}")
+        output = result.stdout.strip().splitlines()
 
         if output:
             videos = []
