@@ -1,4 +1,3 @@
-import concurrent.futures
 import subprocess
 from tqdm import tqdm
 from termcolor import colored
@@ -60,8 +59,7 @@ users = load_users()
 with open("youtube_videos.m3u", "w") as m3u_file:
     m3u_file.write("#EXTM3U $BorpasFileFormat=\"1\" $NestedGroupsSeparator=\"/\"\n")
 
-# Έλεγχος για κάθε χρήστη για βίντεο με παράλληλη εκτέλεση
-with concurrent.futures.ThreadPoolExecutor() as executor:
-    results = list(tqdm(executor.map(check_user_videos, users), total=len(users), desc="Έλεγχος χρηστών του YouTube για βίντεο", ncols=120, bar_format='{l_bar}{bar}| {n_fmt}/{total_fmt} {postfix}'))
-    for result in results:
-        tqdm.write(result)
+# Έλεγχος για κάθε χρήστη για βίντεο με διαδοχική εκτέλεση
+for user in tqdm(users, desc="Έλεγχος χρηστών του YouTube για βίντεο", ncols=120, bar_format='{l_bar}{bar}| {n_fmt}/{total_fmt} {postfix}'):
+    result = check_user_videos(user)
+    tqdm.write(result)
