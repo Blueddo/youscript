@@ -48,6 +48,8 @@ def check_user_videos(user):
             "--playlist-end", "5",
             "--no-check-certificates",  # Παράλειψη ελέγχου πιστοποιητικών
             "--user-agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36",
+            "--geo-bypass",  # Παράλειψη γεωγραφικών περιορισμών
+            "--force-ipv4",  # Χρήση IPv4 για αποφυγή μπλοκαρίσματος
             f"https://www.youtube.com/{user}/videos"
         ]
 
@@ -79,8 +81,10 @@ def check_user_videos(user):
             return f"Έλεγχος χρήστη: {user} - Δεν βρέθηκαν βίντεο"
     except subprocess.CalledProcessError as e:
         error_message = e.stderr.strip()
-        if "Sign in to confirm" in error_message or "members-only" in error_message:
-            return f"Έλεγχος χρήστη: {user} - Παραλείφθηκε λόγω περιορισμών πρόσβασης (σύνδεση ή members-only)"
+        if "Sign in to confirm" in error_message:
+            return f"Έλεγχος χρήστη: {user} - Παραλείφθηκε λόγω απαίτησης σύνδεσης (YouTube bot detection)"
+        if "members-only" in error_message:
+            return f"Έλεγχος χρήστη: {user} - Παραλείφθηκε λόγω περιεχομένου μόνο για μέλη"
         return f"Έλεγχος χρήστη: {user} - Σφάλμα yt-dlp: {error_message}"
     except Exception as e:
         return f"Σφάλμα κατά τον έλεγχο του χρήστη {user}: {e}"
