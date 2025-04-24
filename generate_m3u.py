@@ -39,9 +39,20 @@ def load_users():
 # Συνάρτηση ανάκτησης βίντεο από το κανάλι
 def check_user_videos(user):
     try:
-        # Εκτέλεση yt-dlp για να πάρουμε τη λίστα των πιο πρόσφατων βίντεο
+        # Εκτέλεση yt-dlp με επιλογές για να αποφύγουμε μπλοκάρισμα
+        cmd = [
+            "yt-dlp",
+            "-f", "18",  # Ποιότητα 360p
+            "--get-url",
+            "--get-title",
+            "--playlist-end", "5",
+            "--no-check-certificates",  # Παράλειψη ελέγχου πιστοποιητικών
+            "--user-agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36",
+            f"https://www.youtube.com/{user}/videos"
+        ]
+
         result = subprocess.run(
-            ["yt-dlp", "-f", "18", "--get-url", "--get-title", "--playlist-end", "5", f"https://www.youtube.com/{user}/videos"],
+            cmd,
             capture_output=True, text=True, check=True
         )
         output = result.stdout.strip().splitlines()
@@ -63,11 +74,14 @@ def check_user_videos(user):
                         m3u_file.write(f"{url}\n")
                 return f"Έλεγχος χρήστη: {user} - {status}"
             else:
-                return f"Έλεγχος χρήστη: {user} - Δεν βρέθηκαν βίντεο"
+                return f"Έλεγχος χρήστη: {user} - Δεν βρέθηκαν προσβάσιμα βίντεο"
         else:
             return f"Έλεγχος χρήστη: {user} - Δεν βρέθηκαν βίντεο"
     except subprocess.CalledProcessError as e:
-        return f"Έλεγχος χρήστη: {user} - Σφάλμα yt-dlp: {e.stderr.strip()}"
+        error_message = e.stderr.strip()
+        if "Sign in to confirm" in error_message or "members-only" in error_message:
+            return f"Έλεγχος χρήστη: {user} - Παραλείφθηκε λόγω περιορισμών πρόσβασης (σύνδεση ή members-only)"
+        return f"Έλεγχος χρήστη: {user} - Σφάλμα yt-dlp: {error_message}"
     except Exception as e:
         return f"Σφάλμα κατά τον έλεγχο του χρήστη {user}: {e}"
 
