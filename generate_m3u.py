@@ -1,117 +1,47 @@
-import concurrent.futures
 import subprocess
-import sys
-import os
-from tqdm import tqdm
-from termcolor import colored
+import re
 
-# Συνάρτηση για εγκατάσταση εξαρτήσεων
-def install_dependencies():
+def get_youtube_playlist_info(url, max_videos=5):
+    # Command to get title and URL for each video
+    command = [
+        'yt-dlp',
+        '-f', '18',  # Select format (360p mp4)
+        '--get-url',
+        '--get-title',
+        '--playlist-end', str(max_videos),
+        url
+    ]
+    
     try:
-        subprocess.check_call([sys.executable, "-m", "pip", "install", "tqdm", "termcolor", "yt-dlp"])
-        print("Εγκαταστάθηκαν όλες οι εξαρτήσεις.")
+        # Execute command and capture output
+        output = subprocess.check_output(command, text=True)
+        lines = output.strip().split('\n')
+        
+        # Pair titles with URLs
+        videos = []
+        for i in range(0, len(lines), 2):
+            if i + 1 < len(lines):
+                title = re.sub(r'[^\w\s-]', '', lines[i]).strip()  # Clean title
+                url = lines[i + 1].strip()
+                videos.append((title, url))
+        return videos
     except subprocess.CalledProcessError as e:
-        print(f"Σφάλμα κατά την εγκατάσταση εξαρτήσεων: {e}")
-        sys.exit(1)
+        print(f"Error running yt-dlp: {e}")
+        return []
 
-# Συνάρτηση φόρτωσης χρηστών από αρχείο
-def load_users():
-    users = []
-    file_path = "usersyoutube.txt"
-    if not os.path.exists(file_path):
-        print(colored(f"Το αρχείο {file_path} δεν βρέθηκε!", "red"))
-        sys.exit(1)
-    try:
-        with open(file_path, "r", encoding="utf-8") as file:
-            for line in file:
-                user = line.strip()
-                if user:
-                    users.append(user)
-        if not users:
-            print(colored("Το αρχείο usersyoutube.txt είναι κενό!", "red"))
-            sys.exit(1)
-        print(f"Φορτώθηκαν {len(users)} χρήστες από το αρχείο {file_path}.")
-    except Exception as e:
-        print(f"Σφάλμα κατά την ανάγνωση του αρχείου: {e}")
-        sys.exit(1)
-    return users
-
-# Συνάρτηση ανάκτησης βίντεο από το κανάλι
-def check_user_videos(user):
-    try:
-        # Εκτέλεση yt-dlp με επιλογές για να αποφύγουμε μπλοκάρισμα
-        cmd = [
-            "yt-dlp",
-            "-f", "18",  # Ποιότητα 360p
-            "--get-url",
-            "--get-title",
-            "--playlist-end", "5",
-            "--no-check-certificates",  # Παράλειψη ελέγχου πιστοποιητικών
-            "--user-agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36",
-            "--geo-bypass",  # Παράλειψη γεωγραφικών περιορισμών
-            "--force-ipv4",  # Χρήση IPv4 για αποφυγή μπλοκαρίσματος
-            f"https://www.youtube.com/{user}/videos"
-        ]
-
-        result = subprocess.run(
-            cmd,
-            capture_output=True, text=True, check=True
-        )
-        output = result.stdout.strip().splitlines()
-
-        if output:
-            videos = []
-            for i in range(0, len(output), 2):
-                if i + 1 < len(output):
-                    title = output[i].strip()
-                    url = output[i + 1].strip()
-                    if url.startswith("https://"):
-                        videos.append((title, url))
-
-            if videos:
-                status = colored(f"Βρέθηκαν {len(videos)} βίντεο (ποιότητα 360p)", "green", attrs=["bold"])
-                with open("youtube_videos.m3u", "a", encoding="utf-8") as m3u_file:
-                    for title, url in videos:
-                        m3u_file.write(f"#EXTINF:-1 group-title=\"YouTube Videos\" tvg-logo=\"https://www.youtube.com/favicon.ico\" tvg-id=\"simpleTVFakeEpgId\" $ExtFilter=\"YouTube Videos\",{user} - {title}\n")
-                        m3u_file.write(f"{url}\n")
-                return f"Έλεγχος χρήστη: {user} - {status}"
-            else:
-                return f"Έλεγχος χρήστη: {user} - Δεν βρέθηκαν προσβάσιμα βίντεο"
-        else:
-            return f"Έλεγχος χρήστη: {user} - Δεν βρέθηκαν βίντεο"
-    except subprocess.CalledProcessError as e:
-        error_message = e.stderr.strip()
-        if "Sign in to confirm" in error_message:
-            return f"Έλεγχος χρήστη: {user} - Παραλείφθηκε λόγω απαίτησης σύνδεσης (YouTube bot detection)"
-        if "members-only" in error_message:
-            return f"Έλεγχος χρήστη: {user} - Παραλείφθηκε λόγω περιεχομένου μόνο για μέλη"
-        return f"Έλεγχος χρήστη: {user} - Σφάλμα yt-dlp: {error_message}"
-    except Exception as e:
-        return f"Σφάλμα κατά τον έλεγχο του χρήστη {user}: {e}"
-
-# Κύριο πρόγραμμα
-def main():
-    # Εγκατάσταση εξαρτήσεων
-    install_dependencies()
-
-    # Φόρτωση χρηστών
-    users = load_users()
-
-    # Δημιουργία αρχείου m3u
-    with open("youtube_videos.m3u", "w", encoding="utf-8") as m3u_file:
-        m3u_file.write("#EXTM3U $BorpasFileFormat=\"1\" $NestedGroupsSeparator=\"/\"\n")
-
-    # Έλεγχος χρηστών με παράλληλη εκτέλεση
-    with concurrent.futures.ThreadPoolExecutor() as executor:
-        results = list(tqdm(
-            executor.map(check_user_videos, users),
-            total=len(users),
-            desc="Έλεγχος χρηστών του YouTube για βίντεο",
-            ncols=120,
-            bar_format='{l_bar}{bar}| {n_fmt}/{total_fmt} {postfix}'
-        ))
-        for result in results:
-            tqdm.write(result)
+def create_m3u_playlist(videos, output_file="playlist.m3u"):
+    # Create M3U content
+    m3u_content = "#EXTM3U\n"
+    for title, url in videos:
+        m3u_content += f"#EXTINF:-1,{title}\n{url}\n"
+    
+    # Write to file
+    with open(output_file, 'w', encoding='utf-8') as f:
+        f.write(m3u_content)
+    print(f"M3U playlist saved as {output_file}")
 
 if __name__ == "__main__":
-    main()
+    playlist_url = "https://www.youtube.com/@grxpress/videos"
+    videos = get_youtube_playlist_info(playlist_url, max_videos=5)
+    if videos:
+        create_m3u_playlist(videos)
