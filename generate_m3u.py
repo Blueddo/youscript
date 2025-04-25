@@ -1,47 +1,67 @@
+import concurrent.futures
 import subprocess
-import re
+from tqdm import tqdm
+from termcolor import colored
 
-def get_youtube_playlist_info(url, max_videos=5):
-    # Command to get title and URL for each video
-    command = [
-        'yt-dlp',
-        '-f', '18',  # Select format (360p mp4)
-        '--get-url',
-        '--get-title',
-        '--playlist-end', str(max_videos),
-        url
-    ]
-    
+# Συνάρτηση φόρτωσης χρηστών από αρχείο
+def load_users():
+    users = []
     try:
-        # Execute command and capture output
-        output = subprocess.check_output(command, text=True)
-        lines = output.strip().split('\n')
-        
-        # Pair titles with URLs
-        videos = []
-        for i in range(0, len(lines), 2):
-            if i + 1 < len(lines):
-                title = re.sub(r'[^\w\s-]', '', lines[i]).strip()  # Clean title
-                url = lines[i + 1].strip()
-                videos.append((title, url))
-        return videos
-    except subprocess.CalledProcessError as e:
-        print(f"Error running yt-dlp: {e}")
-        return []
+        with open("usersyoutube.txt", "r") as file:
+            for line in file:
+                users.append(line.strip())
+        print(f"Φορτώθηκαν {len(users)} χρήστες από το αρχείο usersyoutube.txt.")
+    except FileNotFoundError:
+        print("Το αρχείο usersyoutube.txt δεν βρέθηκε.")
+    except Exception as e:
+        print(f"Σφάλμα κατά την ανάγνωση του αρχείου: {e}")
+    return users
 
-def create_m3u_playlist(videos, output_file="playlist.m3u"):
-    # Create M3U content
-    m3u_content = "#EXTM3U\n"
-    for title, url in videos:
-        m3u_content += f"#EXTINF:-1,{title}\n{url}\n"
-    
-    # Write to file
-    with open(output_file, 'w', encoding='utf-8') as f:
-        f.write(m3u_content)
-    print(f"M3U playlist saved as {output_file}")
+# Συνάρτηση ανάκτησης βίντεο από το κανάλι
+def check_user_videos(user):
+    try:
+        # Εκτέλεση yt-dlp για να πάρουμε τη λίστα των πιο πρόσφατων βίντεο από το κανάλι
+        result = subprocess.run(
+            ["yt-dlp", "-f", "18", "--get-url", "--get-title", "--playlist-end", "5", f"https://www.youtube.com/{user}/videos"],
+            capture_output=True, text=True
+        )
+        output = result.stdout.strip().splitlines()
 
-if __name__ == "__main__":
-    playlist_url = "https://www.youtube.com/@grxpress/videos"
-    videos = get_youtube_playlist_info(playlist_url, max_videos=5)
-    if videos:
-        create_m3u_playlist(videos)
+        if output:
+            # Διαχωρισμός τίτλων και URLs (ο yt-dlp επιστρέφει τίτλο και μετά URL για κάθε βίντεο)
+            videos = []
+            for i in range(0, len(output), 2):
+                if i + 1 < len(output):  # Βεβαιωνόμαστε ότι υπάρχει URL μετά τον τίτλο
+                    title = output[i].strip()
+                    url = output[i + 1].strip()
+                    if url.startswith("https://"):
+                        videos.append((title, url))
+
+            if videos:
+                status = colored(f"βρέθηκαν {len(videos)} βίντεο (ποιότητα 360p)", "green", attrs=["bold"])
+                with open("youtube_videos.m3u", "a") as m3u_file:
+                    for title, url in videos:
+                        m3u_file.write(f"#EXTINF:-1 group-title=\"YouTube Videos\" tvg-logo=\"https://www.youtube.com/favicon.ico\" tvg-id=\"simpleTVFakeEpgId\" $ExtFilter=\"YouTube Videos\",{user} - {title}\n")
+                        m3u_file.write(f"{url}\n")
+                return f"Έλεγχος χρήστη: {user} - {status}"
+            else:
+                return f"Έλεγχος χρήστη: {user} - δεν βρέθηκαν βίντεο"
+        else:
+            return f"Έλεγχος χρήστη: {user} - δεν βρέθηκαν βίντεο"
+    except subprocess.CalledProcessError:
+        return f"Έλεγχος χρήστη: {user} - σφάλμα κατά την ανάκτηση βίντεο"
+    except Exception as e:
+        return f"Σφάλμα κατά τον έλεγχο του χρήστη {user}: {e}"
+
+# Φόρτωση χρηστών από το αρχείο
+users = load_users()
+
+# Δημιουργία αρχείου m3u με επιπλέον πληροφορίες
+with open("youtube_videos.m3u", "w") as m3u_file:
+    m3u_file.write("#EXTM3U $BorpasFileFormat=\"1\" $NestedGroupsSeparator=\"/\"\n")
+
+# Έλεγχος για κάθε χρήστη για βίντεο με παράλληλη εκτέλεση
+with concurrent.futures.ThreadPoolExecutor() as executor:
+    results = list(tqdm(executor.map(check_user_videos, users), total=len(users), desc="Έλεγχος χρηστών του YouTube για βίντεο", ncols=120, bar_format='{l_bar}{bar}| {n_fmt}/{total_fmt} {postfix}'))
+    for result in results:
+        tqdm.write(result)
